@@ -158,14 +158,26 @@ if df_analysis is not None:
     # STORE ORIGINAL FOR COMPANY ANALYSIS
     df_original = df_analysis.copy()
 
-    # PREPARE FOR MODEL (drop non-numeric)
+# PREPARE FOR MODEL (keep required features only)
     df = df_analysis.copy()
+    years_data = None
+    
     if "company_name" in df.columns:
         df = df.drop(columns=["company_name"])
+    
     if "year" in df.columns:
+        years_data = df["year"].copy()
         df = df.drop(columns=["year"])
-
-    df = df.fillna(df.median(numeric_only=True))
+    
+    expected_features = ['year', 'X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7', 'X8', 
+                        'X9', 'X10', 'X11', 'X12', 'X13', 'X14', 'X15', 'X16', 'X17', 'X18']
+    
+    for feat in expected_features:
+        if feat not in df.columns:
+            df[feat] = 0
+    
+    df = df[expected_features]
+    df = df.fillna(0)
 
     # Process if we have data
     if df is not None and len(df) > 0:
