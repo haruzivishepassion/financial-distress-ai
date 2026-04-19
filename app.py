@@ -267,6 +267,45 @@ if df_analysis is not None:
         with col4:
             st.metric("Records", len(company_data))
 
+        # ===============================
+        # RECOMMENDATIONS FOR EACH COMPANY
+        # ===============================
+        st.subheader(f"📋 {selected_company} - Recommendations")
+        
+        # Government recommendation (tax exemption etc)
+        if avg_score < 40:
+            gov_rec = "🔴 **Tax Exemption Recommended** - Company shows signs of financial distress. Consider providing tax relief or relief programs to help recovery."
+        elif avg_score < 60:
+            gov_rec = "🟡 **Monitor Closely** - Company is in medium risk category. Recommend regular financial monitoring and potential temporary tax relief if needed."
+        else:
+            gov_rec = "🟢 **No Government Intervention Needed** - Company is financially healthy."
+        
+        # Bank recommendation (loan eligibility)
+        if avg_score >= 80:
+            bank_rec = "🟢 **LOAN APPROVED** - Excellent creditworthiness. Company qualifies for full loan amounts with favorable interest rates. Low default risk."
+        elif avg_score >= 60:
+            bank_rec = "🟡 **LOAN CONDITIONALLY APPROVED** - Company shows medium risk. Recommend collateral or higher interest rate. Regular monitoring required."
+        elif avg_score >= 40:
+            bank_rec = "🟠 **LOAN HIGH RISK** - Company has high default risk. Limited loan amounts with high interest rates. Require strong collateral."
+        else:
+            bank_rec = "🔴 **LOAN DENIED** - Company shows very high risk of default. Not recommended for loans without significant restructuring."
+        
+        # Investment recommendation
+        if avg_score >= 70:
+            inv_rec = "🟢 **SAFE TO INVEST** - Company shows positive financial health and growth potential."
+        elif avg_score >= 50:
+            inv_rec = "🟡 **CAUTION** - Company shows mixed signals. Recommend thorough due diligence before investing."
+        else:
+            inv_rec = "🔴 **NOT RECOMMENDED** - Company shows high financial distress. High risk of investment loss."
+        
+        col_gov, col_bank, col_inv = st.columns(3)
+        with col_gov:
+            st.info(f"🏛️ **Government**\n\n{gov_rec}")
+        with col_bank:
+            st.success(f"🏦 **Bank**\n\n{bank_rec}")
+        with col_inv:
+            st.warning(f"💰 **Investor**\n\n{inv_rec}")
+
         # Company trend analysis if year exists
         if years is not None:
             st.subheader(f"📈 {selected_company} - Trend Analysis")
@@ -428,50 +467,104 @@ if df_analysis is not None:
                 st.download_button("⬇ Download Report", f, file_name="credit_report.pdf")
 
 # ===============================
-# 🤖 AI CHATBOT (ENHANCED)
+# 🤖 LOCAL CHATBOT (NO API KEY REQUIRED)
 # ===============================
 st.sidebar.title("🤖 Fintech AI Assistant")
 
-# Add context about uploaded data
-chat_context = ""
-if df is not None and company_names is not None:
-    chat_context = f"""
-    Current data summary:
-    - Companies: {', '.join(company_names.unique())}
-    - Total records: {len(df)}
-    - Credit Score range: {df['Credit Score'].min():.1f} - {df['Credit Score'].max():.1f}
-    - Average Credit Score: {df['Credit Score'].mean():.1f}
-    """
+def get_chatbot_response(query, df, company_names):
+    query = query.lower()
+    response = ""
+    
+    if df is None:
+        return "Please upload financial data first to get analysis."
+    
+    # Get unique companies
+    unique_companies = company_names.unique() if company_names is not None else []
+    
+    # Company-specific questions
+    for company in unique_companies:
+        if company.lower() in query or f"company {company.lower()}" in query:
+            company_mask = company_names == company
+            company_df = df[company_mask]
+            score = company_df["Credit Score"].mean()
+            risk = company_df["Risk"].mode().iloc[0] if len(company_df) > 0 else "N/A"
+            
+            if score >= 80:
+                status = "financially healthy with LOW RISK of default"
+                recommendation = "✅ Company qualifies for loans with favorable terms."
+            elif score >= 60:
+                status = "financially stable with MEDIUM RISK"
+                recommendation = "⚠️ Company qualifies for conditional loans."
+            elif score >= 40:
+                status = "financially weak with HIGH RISK"
+                recommendation = "⛔ Company has limited loan eligibility."
+            else:
+                status = "financially distressed with VERY HIGH RISK"
+                recommendation = "⛔ Company NOT recommended for loans."
+            
+            response = f"**Company {company}:**\n\n"
+            response += f"• Credit Score: {score:.1f}/100\n"
+            response += f"• Risk Level: {risk}\n"
+            response += f"• Status: {status}\n"
+            response += f"• Recommendation: {recommendation}\n"
+            return response
+    
+    # General questions
+    if "score" in query or "credit" in query:
+        avg = df["Credit Score"].mean()
+        low = df["Credit Score"].min()
+        high = df["Credit Score"].max()
+        response += f"**Credit Score Analysis:**\n\n"
+        response += f"• Average Score: {avg:.1f}/100\n"
+        response += f"• Range: {low:.1f} - {high:.1f}\n"
+        if avg >= 70:
+            response += f"• Overall: The portfolio shows GOOD financial health.\n"
+        elif avg >= 50:
+            response += f"• Overall: The portfolio shows MODERATE risk.\n"
+        else:
+            response += f"• Overall: The portfolio shows HIGH financial distress.\n"
+    
+    elif "risk" in query:
+        risk_counts = df["Risk"].value_counts()
+        response += f"**Risk Distribution:**\n\n"
+        for risk, count in risk_counts.items():
+            pct = (count / len(df)) * 100
+            response += f"• {risk}: {count} companies ({pct:.1f}%)\n"
+    
+    elif "company" in query:
+        if len(unique_companies) > 0:
+            response += f"**Available Companies:**\n\n"
+            for c in unique_companies:
+                score = df[company_names == c]["Credit Score"].mean()
+                response += f"• {c}: Score {score:.1f}\n"
+        else:
+            response = "No company data available."
+    
+    elif "loan" in query or "bank" in query:
+        response += f"**Bank Loan Eligibility:**\n\n"
+        high_risk = len(df[df["Credit Score"] < 40])
+        med_risk = len(df[(df["Credit Score"] >= 40) & (df["Credit Score"] < 60)])
+        low_risk = len(df[df["Credit Score"] >= 60])
+        response += f"• 🟢 Low Risk (Score 60+): {low_risk} companies - Full loan eligibility\n"
+        response += f"• 🟡 Medium Risk (40-59): {med_risk} companies - Conditional approval\n"
+        response += f"• 🔴 High Risk (<40): {high_risk} companies - Not recommended for loans\n"
+    
+    elif "tax" in query or "government" in query or "exemption" in query:
+        response += f"**Government Support Recommendations:**\n\n"
+        distressed = len(df[df["Credit Score"] < 40])
+        at_risk = len(df[(df["Credit Score"] >= 40) & (df["Credit Score"] < 60)])
+        healthy = len(df[df["Credit Score"] >= 60])
+        response += f"• 🔴 Tax Exemption Needed: {distressed} companies (score < 40)\n"
+        response += f"• 🟡 Monitor & Potential Support: {at_risk} companies (score 40-59)\n"
+        response += f"• 🟢 No Intervention Needed: {healthy} companies (score 60+)\n"
+    
+    else:
+        response = "Try asking about: credit scores, risk, company [name], loans, or tax exemptions."
+    
+    return response
 
-q = st.sidebar.text_input("Ask about risk, companies, or scores", key="chat_input")
+q = st.sidebar.text_input("Ask about risk, companies, loans, or scores", key="chat_input")
 
 if q:
-    if AI_AVAILABLE:
-        try:
-            # Build enhanced prompt with data context
-            system_prompt = f"""You are a senior credit risk analyst in a bank. 
-            You help users analyze company financial health and credit risk.
-            Provide specific insights based on the data when asked about companies.
-            {chat_context}"""
-            
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": q},
-                ],
-            )
-            st.sidebar.write(response.choices[0].message.content)
-
-        except Exception as e:
-            st.sidebar.write("AI error:", e)
-
-    else:
-        st.sidebar.write("AI not configured. Add OPENAI_API_KEY in Streamlit secrets.")
-        # Fallback: Provide basic analysis
-        if "company" in q.lower() and company_names is not None:
-            st.sidebar.write("📊 **Available Companies:** " + ", ".join(company_names.unique()))
-        if "score" in q.lower():
-            if df is not None:
-                st.sidebar.write(f"📈 **Score Range:** {df['Credit Score'].min():.1f} - {df['Credit Score'].max():.1f}")
-                st.sidebar.write(f"📊 **Average Score:** {df['Credit Score'].mean():.1f}")
+    response = get_chatbot_response(q, df, company_names)
+    st.sidebar.markdown(response)
