@@ -18,6 +18,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 # ===============================
 try:
     from openai import OpenAI
+
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
     AI_AVAILABLE = True
 except:
@@ -26,8 +27,72 @@ except:
 # ===============================
 # LOAD MODEL
 # ===============================
-model = joblib.load("model/distress_model.pkl")
-scaler = joblib.load("model/scaler.pkl")
+import os
+
+def load_model_and_scaler():
+    """Load model and scaler with multiple path attempts"""
+    # Get the directory of the current script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    model_dir = os.path.join(script_dir, "model")
+    
+    model_path = os.path.join(model_dir, "distress_model.pkl")
+    scaler_path = os.path.join(model_dir, "scaler.pkl")
+    
+    # Alternative paths for different environments
+    alternative_model_paths = [
+        model_path,
+        "./model/distress_model.pkl",
+        "../model/distress_model.pkl",
+        "/mount/src/f-d-ai2/model/distress_model.pkl"  # Streamlit Cloud path
+    ]
+    
+    alternative_scaler_paths = [
+        scaler_path,
+        "./model/scaler.pkl",
+        "../model/scaler.pkl",
+        "/mount/src/f-d-ai2/model/scaler.pkl"  # Streamlit Cloud path
+    ]
+    
+    # Try to load model
+    model = None
+    for path in alternative_model_paths:
+        try:
+            if os.path.exists(path):
+                model = joblib.load(path)
+                break
+        except Exception as e:
+            continue
+    
+    # Try to load scaler
+    scaler = None
+    for path in alternative_scaler_paths:
+        try:
+            if os.path.exists(path):
+                scaler = joblib.load(path)
+                break
+        except Exception as e:
+            continue
+    
+    if model is None or scaler is None:
+        # Debug information
+        st.error("""
+        ❌ **Model Loading Error**
+        Unable to load the trained model or scaler.
+        """)
+        st.write("Current working directory:", os.getcwd())
+        st.write("Script directory:", script_dir)
+        st.write("Model directory contents:", os.listdir(model_dir) if os.path.exists(model_dir) else "Model directory not found")
+        st.write("""
+        Please ensure:
+        1. Model files exist in the 'model' directory
+        2. For Streamlit Cloud: Check that model files are included in your repository
+        3. For local development: Run 'train_model.py' first to generate model files
+        """)
+        st.stop()
+    
+    return model, scaler
+
+model, scaler = load_model_and_scaler()
 
 st.set_page_config(layout="wide")
 st.title("💰 FINTECH CREDIT RISK PLATFORM (PRO)")
@@ -46,9 +111,13 @@ CREATE TABLE IF NOT EXISTS predictions (
 """)
 conn.commit()
 
+
 def save_to_db(score, risk):
-    c.execute("INSERT INTO predictions (credit_score, risk) VALUES (?,?)", (score, risk))
+    c.execute(
+        "INSERT INTO predictions (credit_score, risk) VALUES (?,?)", (score, risk)
+    )
     conn.commit()
+
 
 # ===============================
 # FILE UPLOAD
@@ -56,7 +125,6 @@ def save_to_db(score, risk):
 file = st.file_uploader("Upload Financial Data (CSV/Excel)", type=["csv", "xlsx"])
 
 if file:
-
     # LOAD DATA
     if file.name.endswith(".csv"):
         df = pd.read_csv(file)
@@ -103,9 +171,7 @@ if file:
     st.subheader("📊 Filter Dashboard")
 
     risk_filter = st.multiselect(
-        "Filter Risk Level",
-        df["Risk"].unique(),
-        default=df["Risk"].unique()
+        "Filter Risk Level", df["Risk"].unique(), default=df["Risk"].unique()
     )
 
     filtered_df = df[df["Risk"].isin(risk_filter)]
@@ -134,7 +200,9 @@ if file:
     st.subheader("🧠 Key Drivers of Financial Distress")
 
     importance = model.feature_importances_
-    features = df.drop(columns=["Credit Score", "Risk"], errors="ignore").columns[:len(importance)]
+    features = df.drop(columns=["Credit Score", "Risk"], errors="ignore").columns[
+        : len(importance)
+    ]
 
     fig3, ax3 = plt.subplots()
     ax3.barh(features, importance)
@@ -145,7 +213,7 @@ if file:
     # ===============================
     st.subheader("🏢 Individual Company Analysis")
 
-    idx = st.number_input("Select Company Index", 0, len(df)-1, 0)
+    idx = st.number_input("Select Company Index", 0, len(df) - 1, 0)
 
     st.write(df.iloc[idx])
 
@@ -167,7 +235,7 @@ if file:
             shap_values[idx].values,
             X_scaled[idx],
             matplotlib=True,
-            show=False
+            show=False,
         )
         st.pyplot()
 
@@ -178,7 +246,6 @@ if file:
     # PDF REPORT
     # ===============================
     if st.button("Download Full Report PDF"):
-
         buffer = "report.pdf"
         doc = SimpleDocTemplate(buffer)
         styles = getSampleStyleSheet()
@@ -190,8 +257,8 @@ if file:
         for i in range(min(10, len(df))):
             text = f"""
             Company {i}<br/>
-            Credit Score: {df.iloc[i]['Credit Score']}<br/>
-            Risk: {df.iloc[i]['Risk']}<br/>
+            Credit Score: {df.iloc[i]["Credit Score"]}<br/>
+            Risk: {df.iloc[i]["Risk"]}<br/>
             """
             content.append(Paragraph(text, styles["Normal"]))
             content.append(Spacer(1, 10))
@@ -209,15 +276,17 @@ st.sidebar.title("🤖 Fintech AI Assistant")
 q = st.sidebar.text_input("Ask about risk, companies, or scores")
 
 if q:
-
     if AI_AVAILABLE:
         try:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are a senior credit risk analyst in a bank."},
-                    {"role": "user", "content": q}
-                ]
+                    {
+                        "role": "system",
+                        "content": "You are a senior credit risk analyst in a bank.",
+                    },
+                    {"role": "user", "content": q},
+                ],
             )
             st.sidebar.write(response.choices[0].message.content)
 

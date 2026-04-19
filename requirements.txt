@@ -9,4 +9,3 @@ reportlab
 openpyxl
 matplotlib
 seaborn
-joblib
